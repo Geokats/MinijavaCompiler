@@ -5,13 +5,13 @@ import java.util.*;
 public class Visitor2 extends GJNoArguDepthFirst<String>{
   private HashMap<String, ClassInfo> symbolTable;
   private HashMap<String, String> localTable;
-  private LinkedList<String> exprList;
+  private Stack<LinkedList<String>> exprStack;
   private String curClass;
 
   public Visitor2(HashMap<String, ClassInfo> symbolTable){
     this.symbolTable = symbolTable;
     this.localTable = null;
-    this.exprList = null;
+    this.exprStack = new Stack<LinkedList<String>>();
     this.curClass = null;
   }
 
@@ -185,7 +185,7 @@ public class Visitor2 extends GJNoArguDepthFirst<String>{
 
     String retType = new String(n.f10.accept(this));
 
-    if(!type.equals(retType)){
+    if(!assignmentCheck(type, retType)){
       throw new Exception("In method " + name + ", return type doesn't match method's type");
     }
 
@@ -604,8 +604,11 @@ public class Visitor2 extends GJNoArguDepthFirst<String>{
 
     MethodInfo curMethod = curClass.getMethod(methodName);
 
-    exprList = new LinkedList<String>();
+    //Create an exprList and push it to the stack to be filled
+    LinkedList<String> exprList = new LinkedList<String>();
+    exprStack.push(exprList);
     n.f4.accept(this); //Expression list
+    exprList = exprStack.pop();
 
     //Check that the expression list matches the parameter list
     if(exprList.size() != curMethod.parameterTypes.size()){
@@ -629,8 +632,10 @@ public class Visitor2 extends GJNoArguDepthFirst<String>{
   public String visit(ExpressionList n) throws Exception {
     String _ret=null;
 
+    LinkedList<String> exprList = exprStack.pop();
     String expr = new String(n.f0.accept(this));
     exprList.add(expr);
+    exprStack.push(exprList);
 
     n.f1.accept(this);
     return _ret;
@@ -650,8 +655,10 @@ public class Visitor2 extends GJNoArguDepthFirst<String>{
   public String visit(ExpressionTerm n) throws Exception {
     String _ret=null;
 
+    LinkedList<String> exprList = exprStack.pop();
     String expr = new String(n.f1.accept(this));
     exprList.add(expr);
+    exprStack.push(exprList);
 
     return _ret;
   }
