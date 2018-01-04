@@ -6,11 +6,13 @@ public class Visitor1 extends GJNoArguDepthFirst<String> {
   private LinkedHashMap<String, ClassInfo> symbolTable;
   private String curClass;
   private String curMethod;
+  private MethodInfo curMethodInfo;
 
   public Visitor1(LinkedHashMap<String, ClassInfo> symbolTable){
     this.symbolTable = symbolTable;
     this.curClass = null;
     this.curMethod = null;
+    this.curMethodInfo = null;
   }
 
   //
@@ -64,9 +66,9 @@ public class Visitor1 extends GJNoArguDepthFirst<String> {
     symbolTable.put(className, curClassInfo);
 
     //Add main method to class
-    MethodInfo mainMethod = new MethodInfo("void");
+    MethodInfo mainMethod = new MethodInfo("main", "void", curClassInfo);
     mainMethod.addParameter("String[]");
-    curClassInfo.methods.put("main", mainMethod);
+    curClassInfo.addMethod(mainMethod);
 
 
     return _ret;
@@ -162,11 +164,11 @@ public class Visitor1 extends GJNoArguDepthFirst<String> {
 
     if(curMethod == null){
       //The variable being declared is a field of the class
-      if(curClassInfo.variables.containsKey(name)){
+      if(curClassInfo.hasVarDef(name)){
         throw new Exception("Class " + curClass + " has more than one variables named " + name);
       }
 
-      curClassInfo.variables.put(name, type);
+      curClassInfo.addVar(name, type);
     }
     else{
       //The variable being declared belongs to a method
@@ -198,19 +200,22 @@ public class Visitor1 extends GJNoArguDepthFirst<String> {
 
     ClassInfo curClassInfo = symbolTable.get(curClass);
 
-    if(curClassInfo.methods.containsKey(name)){
+    if(curClassInfo.hasMethodDef(name)){
       throw new Exception("Class " + curClass + " has more than one methods named " + name);
     }
 
     curMethod = name;
-    MethodInfo curMethodInfo = new MethodInfo(type);
-    curClassInfo.methods.put(name, curMethodInfo);
+    // MethodInfo curMethodInfo = new MethodInfo(name, type, curClassInfo);
+    curMethodInfo = new MethodInfo(name, type, curClassInfo);
 
     n.f4.accept(this); //Parameter list
 
-    if(curClassInfo.methodOverloads(name)){
+    if(curClassInfo.methodOverloads(curMethodInfo)){
       throw new Exception("Overloading done by method " + name + " is not allowed");
     }
+
+    curClassInfo.addMethod(curMethodInfo);
+
     return _ret;
   }
 
@@ -232,8 +237,8 @@ public class Visitor1 extends GJNoArguDepthFirst<String> {
   public String visit(FormalParameter n) throws Exception {
     String _ret=null;
 
-    ClassInfo curClassInfo = symbolTable.get(curClass);
-    MethodInfo curMethodInfo = curClassInfo.methods.get(curMethod);
+    // ClassInfo curClassInfo = symbolTable.get(curClass);
+    // MethodInfo curMethodInfo = curClassInfo.getMethod(curMethod);
 
     String type = new String(n.f0.accept(this));
 
@@ -606,7 +611,6 @@ public class Visitor1 extends GJNoArguDepthFirst<String> {
   * f0 -> <IDENTIFIER>
   */
   public String visit(Identifier n) throws Exception {
-    // n.f0.accept(this);
     return n.f0.toString();
   }
 

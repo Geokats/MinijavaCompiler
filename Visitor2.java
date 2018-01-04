@@ -22,10 +22,8 @@ public class Visitor2 extends GJNoArguDepthFirst<String>{
     }
 
     ClassInfo type2Class = symbolTable.get(type2);
-    if(type2Class != null){
-      if(type2Class.isChildOf(type1)){
-        return true;
-      }
+    if(type2Class != null && type2Class.isChildOf(type1)){
+      return true;
     }
 
     return false;
@@ -143,7 +141,7 @@ public class Visitor2 extends GJNoArguDepthFirst<String>{
   public String visit(VarDeclaration n) throws Exception {
     String _ret=null;
     //Var declaration can only be reached by a method declaration
-    //It will never be called for the declaration of a class' fiedls
+    //It will never be called for the declaration of a class' fields
 
     String type = new String(n.f0.accept(this));
     String name = new String(n.f1.accept(this));
@@ -316,8 +314,8 @@ public class Visitor2 extends GJNoArguDepthFirst<String>{
     if(localTable.containsKey(id)){
       idType = localTable.get(id);
     }
-    else if(curClassInfo.hasField(id)){
-      idType = curClassInfo.getFieldType(id);
+    else if(curClassInfo.hasVar(id)){
+      idType = curClassInfo.getVarType(id);
     }
     else{
       throw new Exception("Variable " + id + " is never defined");
@@ -351,8 +349,8 @@ public class Visitor2 extends GJNoArguDepthFirst<String>{
     if(localTable.containsKey(id)){
       idType = localTable.get(id);
     }
-    else if(curClassInfo.hasField(id)){
-      idType = curClassInfo.getFieldType(id);
+    else if(curClassInfo.hasVar(id)){
+      idType = curClassInfo.getVarType(id);
     }
     else{
       throw new Exception("Variable " + id + " is never defined");
@@ -611,18 +609,18 @@ public class Visitor2 extends GJNoArguDepthFirst<String>{
     exprList = exprStack.pop();
 
     //Check that the expression list matches the parameter list
-    if(exprList.size() != curMethod.parameterTypes.size()){
+    if(exprList.size() != curMethod.parameterCount()){
       throw new Exception("Invalid count of arguments given in call of method " + methodName);
     }
 
     for(int i = 0; i < exprList.size(); i++){
       //Check if types match
-      if(!assignmentCheck(curMethod.parameterTypes.get(i), exprList.get(i))){
-        throw new Exception("In call of method " + methodName + ", argument " + (i+1) + " is of type " + exprList.get(i) + " instead of " + curMethod.parameterTypes.get(i));
+      if(!assignmentCheck(curMethod.getParameter(i), exprList.get(i))){
+        throw new Exception("In call of method " + methodName + ", argument " + (i+1) + " is of type " + exprList.get(i) + " instead of " + curMethod.getParameter(i));
       }
     }
 
-    return curMethod.type;
+    return curMethod.getType();
   }
 
   /**
@@ -685,8 +683,8 @@ public class Visitor2 extends GJNoArguDepthFirst<String>{
       if(localTable.containsKey(id)){
         idType = localTable.get(id);
       }
-      else if(curClassInfo.hasField(id)){
-        idType = curClassInfo.getFieldType(id);
+      else if(curClassInfo.hasVar(id)){
+        idType = curClassInfo.getVarType(id);
       }
       else{
         throw new Exception("Variable " + id + " is never defined");
@@ -733,7 +731,7 @@ public class Visitor2 extends GJNoArguDepthFirst<String>{
   public String visit(ThisExpression n) throws Exception {
     //Return the type (name) of the current class
     ClassInfo curClassInfo = symbolTable.get(curClass);
-    return curClassInfo.name;
+    return curClassInfo.getName();
   }
 
   /**
