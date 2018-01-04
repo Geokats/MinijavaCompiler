@@ -35,6 +35,10 @@ class ClassInfo{
     return this.vtable;
   }
 
+  public int getMethodCount(){
+    return vtable.size();
+  }
+
   public MethodInfo getMethod(String name){
     return this.vtable.get(name);
   }

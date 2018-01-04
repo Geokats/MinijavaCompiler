@@ -31,15 +31,11 @@ class MiniJavac {
         root.accept(v2);
 
         //Print offsets
-        Set classes = symbolTable.keySet();
-        Iterator iter = classes.iterator();
+        printOffsets(symbolTable);
 
-        while(iter.hasNext()){
-          String name = (String) iter.next();
-          ClassInfo curClassInfo = symbolTable.get(name);
-
-          curClassInfo.printOffsets();
-        }
+        // Send LLVMVisitor to produce IR code
+        LLVMVisitor llvm = new LLVMVisitor(symbolTable, "test.ll");
+        root.accept(llvm, null);
 
       }
       catch(ParseException ex){
@@ -61,6 +57,18 @@ class MiniJavac {
           System.err.println(ex.getMessage());
         }
       }
+    }
+  }
+
+  public static void printOffsets(LinkedHashMap<String,ClassInfo> symbolTable){
+    Set classes = symbolTable.keySet();
+    Iterator iter = classes.iterator();
+
+    while(iter.hasNext()){
+      String name = (String) iter.next();
+      ClassInfo curClassInfo = symbolTable.get(name);
+
+      curClassInfo.printOffsets();
     }
   }
 }
