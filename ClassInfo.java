@@ -43,6 +43,24 @@ class ClassInfo{
     return this.vtable.get(name);
   }
 
+  public int getMethodOffset(String name){
+    int offset = 0;
+    Set methodSet = this.vtable.keySet();
+    Iterator iter = methodSet.iterator();
+
+    while(iter.hasNext()){
+      String methodName = (String) iter.next();
+      if(methodName.equals(name)){
+        return offset;
+      }
+      else{
+        offset += 1;
+      }
+    }
+
+    return -1;
+  }
+
   public String getVarType(String id){
     if(this.variables.containsKey(id)){
       return this.variables.get(id);
@@ -50,6 +68,42 @@ class ClassInfo{
     else{
       return this.parentClass.getVarType(id);
     }
+  }
+
+  public int getVarOffset(String id){
+    if(this.variables.containsKey(id)){
+      int offset = 8; //vtable
+      Set varSet = this.variables.keySet();
+      Iterator iter = varSet.iterator();
+
+      while(iter.hasNext()){
+        String varName = (String) iter.next();
+
+        if(varName.equals(id)){
+          return offset;
+        }
+        else{
+          switch(this.variables.get(varName)){
+            case "int":
+              offset += 4;
+              break;
+            case "boolean":
+              offset += 1;
+              break;
+            case "int[]":
+              offset += 8;
+              break;
+            default:
+              offset += 8;
+          }
+        }
+      }
+    }
+    else if(this.parentClass != null){
+      return this.parentClass.getVarOffset(id);
+    }
+
+    return -1;
   }
 
 
@@ -143,7 +197,7 @@ class ClassInfo{
     int methOffset = 0;
 
     if(this.parentClass != null){
-      varOffset = parentClass.getVarOffset();
+      varOffset = parentClass.getVarsOffset();
       methOffset = 0;
     }
 
@@ -184,11 +238,11 @@ class ClassInfo{
     System.out.println();
   }
 
-  public int getVarOffset(){
+  public int getVarsOffset(){
     int offset = 0;
 
     if(this.parentClass != null){
-      offset += parentClass.getVarOffset();
+      offset += parentClass.getVarsOffset();
     }
 
     Set vars = this.variables.keySet();

@@ -36,4 +36,31 @@ class MethodInfo{
   public ClassInfo getDefClass(){
     return this.defClass;
   }
+
+
+
+  private String convertType(String type){
+    switch(type){
+      case "int":
+        return "i32";
+      case "boolean":
+        return "i1";
+      case "int[]":
+        return "i32*";
+      default:
+        return "i8*";
+    }
+  }
+
+  public String llvmSign(){
+    String sign = new String(convertType(this.type) + " (i8*");
+
+    for(int i = 0; i < this.parameterTypes.size(); i++){
+      sign = sign.concat(", " + convertType(this.parameterTypes.get(i)));
+    }
+
+    sign = sign.concat(")");
+
+    return sign;
+  }
 }

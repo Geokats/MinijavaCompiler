@@ -46,8 +46,8 @@ class MiniJavac {
       }
       catch(Exception ex){
         System.out.println("Semantic Error: " + ex.getMessage());
-        // System.out.println(ex.getClass().getName());
-        // ex.printStackTrace();
+        System.out.println(ex.getClass().getName());
+        ex.printStackTrace();
       }
       finally{
         try{

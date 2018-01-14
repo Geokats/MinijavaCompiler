@@ -6,15 +6,18 @@ import java.io.*;
 public class LLVMVisitor extends GJDepthFirst<String,String>{
   private HashMap<String, ClassInfo> symbolTable;
   private LinkedHashMap<String, String> localTable;
-  private Stack<LinkedList<String>> exprStack;
+  private Stack<String> exprStack;
 
   private ClassInfo curClass;
   private MethodInfo curMethod;
+  private String curType;
 
   private int registerCount;
   private int ifCount;
   private int loopCount;
   private int allocCount;
+  private int oobCount;
+  private int andCount;
 
   private int indent;
   private PrintWriter output;
@@ -22,15 +25,18 @@ public class LLVMVisitor extends GJDepthFirst<String,String>{
   public LLVMVisitor(HashMap<String, ClassInfo> symbolTable, String outFileName) throws FileNotFoundException{
     this.symbolTable = symbolTable;
     this.localTable = null;
-    this.exprStack = null;
+    this.exprStack = new Stack<String>();
 
     this.curClass = null;
     this.curMethod = null;
+    this.curType = null;
 
     this.registerCount = 0;
     this.ifCount = 0;
     this.loopCount = 0;
     this.allocCount = 0;
+    this.oobCount = 0;
+    this.andCount = 0;
 
     this.indent = 0;
     this.output = new PrintWriter(outFileName);
@@ -64,6 +70,16 @@ public class LLVMVisitor extends GJDepthFirst<String,String>{
   private String getAlloc(){
     this.allocCount += 1;
     return "arr_alloc" + allocCount;
+  }
+
+  private String getOob(){
+    this.oobCount += 1;
+    return "oob" + oobCount;
+  }
+
+  private String getAnd(){
+    this.andCount += 1;
+    return "and" + andCount;
   }
 
   private String convertType(String type){
@@ -495,6 +511,8 @@ public class LLVMVisitor extends GJDepthFirst<String,String>{
   public String visit(AssignmentStatement n, String argu) throws Exception {
     String _ret=null;
 
+    String expr = new String(n.f2.accept(this, argu));
+
     String name = new String(n.f0.accept(this, argu));
     String type;
 
@@ -504,17 +522,16 @@ public class LLVMVisitor extends GJDepthFirst<String,String>{
     }
     else{
       //if it's not in the local table then it belongs to the class
-      type = convertType(this.curClassInfo.getVarType(name));
-      int offset =
+      type = convertType(this.curClass.getVarType(name));
+      int offset = this.curClass.getVarOffset(name);
       String r1 = getRegister();
       String r2 = getRegister();
 
       emit(r1 + " = getelementptr i8, i8* %this, i32 " + offset + "\n");
       emit(r2 + " = bitcast i8* " + r1 + " to " + type + "*\n");
-      emit("store " + type + " " + expr + ", " type + "* " + r2 + "\n");
+      emit("store " + type + " " + expr + ", " + type + "* " + r2 + "\n");
     }
 
-    String expr = new String(n.f2.accept(this, argu));
 
     return _ret;
   }
@@ -530,13 +547,56 @@ public class LLVMVisitor extends GJDepthFirst<String,String>{
   */
   public String visit(ArrayAssignmentStatement n, String argu) throws Exception {
     String _ret=null;
-    n.f0.accept(this, argu);
-    n.f1.accept(this, argu);
-    n.f2.accept(this, argu);
-    n.f3.accept(this, argu);
-    n.f4.accept(this, argu);
-    n.f5.accept(this, argu);
-    n.f6.accept(this, argu);
+
+    String rIndex = new String(n.f2.accept(this, argu));
+    String rVal = new String(n.f5.accept(this, argu));
+    String rArr = getRegister();
+
+    //Load array
+    String id = new String(n.f0.accept(this, argu));
+    if(this.localTable.containsKey(id)){
+      emit(rArr + " = load i32*, i32** %" + id + "\n");
+    }
+    else if(this.curClass.hasVar(id)){
+      String r1 = getRegister();
+      emit(r1 + " = getelementptr i8, i8* %this, i32 " + this.curClass.getVarOffset(id) + "\n");
+      String r2 = getRegister();
+      emit(r2 + " = bitcast i8* " + r1 + " to i32**\n");
+      emit(rArr + " = load i32*, i32** " + r2 + "\n");
+    }
+
+    //Load size
+    String rSize = getRegister();
+    emit(rSize + " = load i32, i32* " + rArr + "\n");
+    String r1 = getRegister();
+    emit(r1 + " = icmp ult i32 " + rIndex + ", " + rSize + "\n");
+
+    String l1 = getOob();
+    String l2 = getOob();
+    String l3 = getOob();
+
+    emit("br i1 " + r1 + ", label %" + l1 + ", label %" + l2 + "\n");
+
+    emit(l1 + ":\n");
+    this.indent++;
+    r1 = getRegister();
+    emit(r1 + " = add i32 " + rIndex + ", 1\n");
+    String r2 = getRegister();
+    emit(r2 + " = getelementptr i32, i32* " + rArr + ", i32 " + r1 + "\n");
+    emit("store i32 " + rVal + ", i32* " + r2 + "\n");
+    emit("br label %" + l3 + "\n");
+    this.indent--;
+
+    emit(l2 + ":\n");
+    this.indent++;
+    emit("call void @throw_oob()\n");
+    emit("br label %" + l3 + "\n");
+    this.indent--;
+
+    emit(l3 + ":\n");
+
+
+
     return _ret;
   }
 
@@ -644,13 +704,41 @@ public class LLVMVisitor extends GJDepthFirst<String,String>{
   * f2 -> PrimaryExpression()
   */
   public String visit(AndExpression n, String argu) throws Exception {
+    String res = getRegister();
+    String rt = getRegister();
+    String rf = getRegister();
+
+    String l1 = getAnd();
+    String l2 = getAnd();
+    String l3 = getAnd();
+
+    //Evaluate first part
     String r1 = n.f0.accept(this, argu);
+    emit("br i1 " + r1 + ", label %" + l1 + ", label %" + l2 + "\n");
+
+    //If true evaluate second part
+    emit(l1 + ":\n");
+    this.indent++;
     String r2 = n.f2.accept(this, argu);
-    String r0 = getRegister();
+    emit(rt + " = add i1 0, " + r2 + "\n");
+    emit("br label %" + l3 + "\n");
+    this.indent--;
 
-    emit(r0 + " = and i32 " + r1 + ", " + r2 + "\n");
+    //If false set to 0
+    emit(l2 + ":\n");
+    this.indent++;
+    emit(rf + " = add i1 0, 0\n");
+    emit("br label %" + l3 + "\n");
+    this.indent--;
 
-    return r0;
+    emit(l3 + ":\n");
+    this.indent++;
+    emit(res + " = phi i1 [" + rt + ", %"+ l1 + "], [" + rf + ", %" + l2 + "]\n");
+    this.indent--;
+
+    emit("\n");
+
+    return res;
   }
 
   /**
@@ -720,12 +808,42 @@ public class LLVMVisitor extends GJDepthFirst<String,String>{
   * f3 -> "]"
   */
   public String visit(ArrayLookup n, String argu) throws Exception {
-    String _ret=null;
-    n.f0.accept(this, argu);
-    n.f1.accept(this, argu);
-    n.f2.accept(this, argu);
-    n.f3.accept(this, argu);
-    return _ret;
+    String rArr = new String(n.f0.accept(this, argu));
+    String rIndex = new String(n.f2.accept(this, argu));
+
+    //Load array's size
+    String r1 = getRegister();
+    emit(r1 + " = load i32, i32* " + rArr + "\n");
+    //Check if index < size
+    String r2 = getRegister();
+    emit(r2 + " = icmp ult i32 " + rIndex + ", " + r1 + "\n");
+
+    String l1 = getOob();
+    String l2 = getOob();
+    String l3 = getOob();
+    emit("br i1 " + r2 + ", label %" + l1 + ", label %" + l2 + "\n");
+
+    emit(l1 + ":\n");
+    this.indent++;
+    //Add 1 to the index
+    r1 = getRegister();
+    emit(r1 + " = add i32 " + rIndex + ", 1\n");
+    r2 = getRegister();
+    emit(r2 + " = getelementptr i32, i32* " + rArr + ", i32 " + r1 + "\n");
+    String res = getRegister();
+    emit(res + " = load i32, i32* " + r2 + "\n");
+    emit("br label %" + l3 + "\n");
+    this.indent--;
+
+    emit(l2 + ":\n");
+    this.indent++;
+    emit("call void @throw_oob()\n");
+    emit("br label %" + l3 + "\n");
+    this.indent--;
+
+    emit(l3 + ":\n");
+
+    return res;
   }
 
   /**
@@ -734,11 +852,11 @@ public class LLVMVisitor extends GJDepthFirst<String,String>{
   * f2 -> "length"
   */
   public String visit(ArrayLength n, String argu) throws Exception {
-    String _ret=null;
-    n.f0.accept(this, argu);
-    n.f1.accept(this, argu);
-    n.f2.accept(this, argu);
-    return _ret;
+    String rArr = new String(n.f0.accept(this, argu));
+    String res = getRegister();
+    emit(res + " = load i32, i32* " + rArr + "\n");
+
+    return res;
   }
 
   /**
@@ -750,14 +868,45 @@ public class LLVMVisitor extends GJDepthFirst<String,String>{
   * f5 -> ")"
   */
   public String visit(MessageSend n, String argu) throws Exception {
-    String _ret=null;
-    n.f0.accept(this, argu);
-    n.f1.accept(this, argu);
-    n.f2.accept(this, argu);
-    n.f3.accept(this, argu);
-    n.f4.accept(this, argu);
-    n.f5.accept(this, argu);
-    return _ret;
+    String rObj = n.f0.accept(this, argu);
+
+    String methodName = new String(n.f2.accept(this, argu));
+    ClassInfo cl = this.symbolTable.get(curType);
+    MethodInfo meth = cl.getMethod(methodName);
+
+    //Get arguments
+    String exprList = new String("i8* " + rObj);
+    this.exprStack.push(exprList);
+    n.f4.accept(this, argu); //ExprList
+    exprList = this.exprStack.pop();
+    //Add types to exprs
+    String[] exprArr = exprList.split(",");
+    exprList = exprArr[0];
+    for(int i = 0; i < meth.parameterCount(); i++){
+      exprList = exprList.concat(", " + convertType(meth.getParameter(i)) + exprArr[i+1]);
+    }
+
+    //Get method
+    String r1 = getRegister();
+    emit(r1 + " = bitcast i8* " + rObj + " to i8***\n");
+    String r2 = getRegister();
+    emit(r2 + " = load i8**, i8*** " + r1 + "\n");
+    r1 = getRegister();
+    emit(r1 + " = getelementptr i8*, i8** " + r2 + ", i32 " + cl.getMethodOffset(methodName) + "\n");
+    r2 = getRegister();
+    emit(r2 + " = load i8*, i8** " + r1 + "\n");
+    String rMeth = getRegister();
+    emit(rMeth + " = bitcast i8* " + r2 + " to " + meth.llvmSign() + "*\n");
+
+    //Call method
+    emit(";" + methodName + "\n");
+    String res = getRegister();
+    emit(res + " = call " + convertType(meth.getType()) + " " + rMeth + "(" + exprList + ")\n");
+
+    //Store type maybe another MessageSend will be called on the return val of this ;)
+    this.curType = meth.getType();
+
+    return res;
   }
 
   /**
@@ -766,8 +915,14 @@ public class LLVMVisitor extends GJDepthFirst<String,String>{
   */
   public String visit(ExpressionList n, String argu) throws Exception {
     String _ret=null;
-    n.f0.accept(this, argu);
+
+    String r = new String(n.f0.accept(this, argu));
+    String exprList = this.exprStack.pop();
+    exprList = exprList.concat(", " + r);
+    this.exprStack.push(exprList);
+
     n.f1.accept(this, argu);
+
     return _ret;
   }
 
@@ -784,8 +939,12 @@ public class LLVMVisitor extends GJDepthFirst<String,String>{
   */
   public String visit(ExpressionTerm n, String argu) throws Exception {
     String _ret=null;
-    n.f0.accept(this, argu);
-    n.f1.accept(this, argu);
+
+    String r = new String(n.f1.accept(this, argu));
+    String exprList = this.exprStack.pop();
+    exprList = exprList.concat(", " + r);
+    this.exprStack.push(exprList);
+
     return _ret;
   }
 
@@ -803,12 +962,25 @@ public class LLVMVisitor extends GJDepthFirst<String,String>{
   public String visit(PrimaryExpression n, String argu) throws Exception {
     if(n.f0.choice instanceof Identifier){
       String name = n.f0.accept(this, argu);
-      String type = convertType(this.localTable.get(name));
+      String type;
+      String res = getRegister();
 
-      String r0 = getRegister();
-      emit(r0 + " = load " + type + ", " + type + "* %" + name + "\n");
+      if(this.localTable.containsKey(name)){
+        this.curType = this.localTable.get(name);
+        type = convertType(this.curType);
+        emit(res + " = load " + type + ", " + type + "* %" + name + "\n");
+      }
+      else if(this.curClass.hasVar(name)){
+        this.curType = this.curClass.getVarType(name);
+        type = convertType(this.curClass.getVarType(name));
+        String r1 = getRegister();
+        emit(r1 + " = getelementptr i8, i8* %this, i32 " + this.curClass.getVarOffset(name) + "\n");
+        String r2 = getRegister();
+        emit(r2 + " = bitcast i8* " + r1 + " to " + type + "*\n");
+        emit(res + " = load " + type + ", " + type + "* " + r2 + "\n");
+      }
 
-      return r0;
+      return res;
     }
     else{
       return n.f0.accept(this, argu);
@@ -847,7 +1019,8 @@ public class LLVMVisitor extends GJDepthFirst<String,String>{
   * f0 -> "this"
   */
   public String visit(ThisExpression n, String argu) throws Exception {
-    return n.f0.accept(this, argu);
+    this.curType = this.curClass.getName();
+    return new String("%this");
   }
 
   /**
@@ -887,6 +1060,7 @@ public class LLVMVisitor extends GJDepthFirst<String,String>{
     emit(r1 + " = bitcast i8* " + r2 + " to i32*\n");
     //store the size in the first position
     emit("store i32 " + size + ", i32* " + r1 + "\n");
+    this.indent--;
 
     return r1;
   }
@@ -905,7 +1079,7 @@ public class LLVMVisitor extends GJDepthFirst<String,String>{
     String r2 = getRegister();
     String r3 = getRegister();
 
-    int size = 8;
+    int size = cl.getVarsOffset() + 8;
 
     emit(r1 + " = call i8* @calloc(i32 1, i32 " + size + ")\n");
 
@@ -913,8 +1087,9 @@ public class LLVMVisitor extends GJDepthFirst<String,String>{
 
     emit(r3 + " = getelementptr [" + cl.getMethodCount() + " x i8*], [" + cl.getMethodCount() + " x i8*]* @." + cl.getName() + "_vtable, i32 0, i32 0\n");
 
-    emit("store i8** " + r3 + ", i8*** " + r2);
+    emit("store i8** " + r3 + ", i8*** " + r2 + "\n");
 
+    this.curType = className;
     return r1;
   }
 
@@ -923,10 +1098,10 @@ public class LLVMVisitor extends GJDepthFirst<String,String>{
   * f1 -> PrimaryExpression()
   */
   public String visit(NotExpression n, String argu) throws Exception {
-    String _ret=null;
-    n.f0.accept(this, argu);
-    n.f1.accept(this, argu);
-    return _ret;
+    String expr = new String(n.f1.accept(this, argu));
+    String r = getRegister();
+    emit(r + " = xor i1 " + expr + ", 1\n");
+    return r;
   }
 
   /**
@@ -935,11 +1110,7 @@ public class LLVMVisitor extends GJDepthFirst<String,String>{
   * f2 -> ")"
   */
   public String visit(BracketExpression n, String argu) throws Exception {
-    String _ret=null;
-    n.f0.accept(this, argu);
-    n.f1.accept(this, argu);
-    n.f2.accept(this, argu);
-    return _ret;
+    return n.f1.accept(this, argu);
   }
 
 }
