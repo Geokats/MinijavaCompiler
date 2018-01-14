@@ -31,10 +31,11 @@ class MiniJavac {
         root.accept(v2);
 
         //Print offsets
-        printOffsets(symbolTable);
+        // printOffsets(symbolTable);
 
         // Send LLVMVisitor to produce IR code
-        LLVMVisitor llvm = new LLVMVisitor(symbolTable, "test.ll");
+        System.err.println("Creating llvm code in " + args[i] + ".ll");
+        LLVMVisitor llvm = new LLVMVisitor(symbolTable, args[i] + ".ll");
         root.accept(llvm, null);
 
       }
@@ -46,8 +47,8 @@ class MiniJavac {
       }
       catch(Exception ex){
         System.out.println("Semantic Error: " + ex.getMessage());
-        System.out.println(ex.getClass().getName());
-        ex.printStackTrace();
+        // System.out.println(ex.getClass().getName());
+        // ex.printStackTrace();
       }
       finally{
         try{
